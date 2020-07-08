@@ -23,10 +23,11 @@ class Waypoint(object):
         self.y = y
         self.is_hovered = False  # whether the mouse is over the waypoint
 
-        self.left   = self.x - WAYPOINTS_RADIUS  # bounding box coordinates
-        self.right  = self.x + WAYPOINTS_RADIUS
-        self.top    = self.y - WAYPOINTS_RADIUS
-        self.bottom = self.y + WAYPOINTS_RADIUS
+        self.radius = WAYPOINTS_RADIUS
+        self.left   = self.x - self.radius  # bounding box coordinates
+        self.right  = self.x + self.radius
+        self.top    = self.y - self.radius
+        self.bottom = self.y + self.radius
 
     def is_colliding(self, x, y):
         """ Checks whether a given point is within the waypoint
@@ -48,27 +49,34 @@ class Waypoint(object):
         if self.is_colliding(x, y):
             if not self.is_hovered:
                 self.is_hovered = True
-
-                radius = 1.5 * WAYPOINTS_RADIUS
-                self.left   = self.x - radius
-                self.right  = self.x + radius
-                self.top    = self.y - radius
-                self.bottom = self.y + radius
+                self.radius = 1.5 * WAYPOINTS_RADIUS
+                self._update_bounding_box()
 
                 return True
-
         else:
             if self.is_hovered:
                 self.is_hovered = False
-
-                self.left   = self.x - WAYPOINTS_RADIUS
-                self.right  = self.x + WAYPOINTS_RADIUS
-                self.top    = self.y - WAYPOINTS_RADIUS
-                self.bottom = self.y + WAYPOINTS_RADIUS
+                self.radius = WAYPOINTS_RADIUS
+                self._update_bounding_box()
 
                 return True
 
         return False
+
+    def update_position(self, x, y):
+        """ Updates the position of the waypoint
+        """
+        self.x = x
+        self.y = y
+        self._update_bounding_box()
+
+    def _update_bounding_box(self):
+        """ Updates the bounding box of the waypoint
+        """
+        self.left   = self.x - self.radius
+        self.right  = self.x + self.radius
+        self.top    = self.y - self.radius
+        self.bottom = self.y + self.radius
 
     def __repr__(self):
         return self._display()
@@ -94,7 +102,7 @@ class TrackBuilder(tk.Frame):
         self.top_frame = tk.Frame(self)
         self.top_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.add_button = tk.Button(self.top_frame, text="Add", command=self._add_button_cb)
+        self.add_button = tk.Button(self.top_frame, text="Add/Move", command=self._add_button_cb)
         self.add_button.pack(side=tk.LEFT)
         self.delete_button = tk.Button(self.top_frame, text="Delete", command=self._delete_button_cb)
         self.delete_button.pack(side=tk.LEFT)
@@ -110,7 +118,8 @@ class TrackBuilder(tk.Frame):
 
         # Initialise other variables
         self.action_state = ADD_STATE
-        self.is_dragging = False  # Whether a waypoint is being dragged (ie moved)
+        self.is_dragging = False    # Whether a waypoint is being dragged (ie moved)
+        self.dragged_wp_idx = None  # Index of the dragged waypoint
         self.waypoints = []
 
     def _update_window(self):
@@ -129,6 +138,9 @@ class TrackBuilder(tk.Frame):
         if not self.is_dragging:
             for wp in self.waypoints:
                 redraw = wp.update_hovering(event.x, event.y) or redraw
+        else:
+            self.waypoints[self.dragged_wp_idx].update_position(event.x, event.y)
+            redraw = True
 
         if redraw:
             self._update_window()
@@ -137,16 +149,18 @@ class TrackBuilder(tk.Frame):
         """
         """
         if self.action_state == ADD_STATE:
-            # Check that it doesn't collid with an already existing waypoint
-            for wp in self.waypoints:
+            # Check whether it collides with an already existing waypoint
+            for i, wp in enumerate(self.waypoints):
                 if wp.is_colliding(event.x, event.y):
+                    self.is_dragging = True
+                    self.dragged_wp_idx = i
                     return
 
             # If not, add a new waypoint
             self.waypoints.append(Waypoint(event.x, event.y))
             self._update_window()
 
-        if self.action_state == DELETE_STATE:
+        elif self.action_state == DELETE_STATE:
             for i, wp in enumerate(self.waypoints):
                 if wp.is_colliding(event.x, event.y):
                     del self.waypoints[i]
@@ -157,7 +171,7 @@ class TrackBuilder(tk.Frame):
     def _left_release_cb(self, event):
         """
         """
-        pass
+        self.is_dragging = False
 
     def _add_button_cb(self):
         """
