@@ -5,6 +5,8 @@
     Corentin Chauvin-Hameau - 2020
 """
 
+import numpy as np
+from scipy.interpolate import splprep, splev
 import tkinter as tk
 
 CANVAS_WIDTH = 800
@@ -107,6 +109,11 @@ class TrackBuilder(tk.Frame):
         self.delete_button = tk.Button(self.top_frame, text="Delete", command=self._delete_button_cb)
         self.delete_button.pack(side=tk.LEFT)
 
+        self.close_loop_text = tk.StringVar()
+        self.close_loop_text.set('Close loop')
+        self.delete_button = tk.Button(self.top_frame, textvariable=self.close_loop_text, command=self._close_loop_button_cb)
+        self.delete_button.pack(side=tk.LEFT)
+
         self.canvas = tk.Canvas(self)
         self.canvas.config(width=CANVAS_WIDTH, height=CANVAS_HEIGHT, background="white")
         self.canvas.pack(fill=tk.BOTH, expand=True)
@@ -118,17 +125,31 @@ class TrackBuilder(tk.Frame):
 
         # Initialise other variables
         self.action_state = ADD_STATE
+        self.waypoints = []
         self.is_dragging = False    # Whether a waypoint is being dragged (ie moved)
         self.dragged_wp_idx = None  # Index of the dragged waypoint
-        self.waypoints = []
+        self.close_loop = False     # Whether to close the loop
 
     def _update_window(self):
         """ Draw all the objects in the window again
         """
         self.canvas.delete(tk.ALL)
 
+        # Draw the waypoints
         for wp in self.waypoints:
             wp.draw(self.canvas)
+
+        # Draw the center line
+        spline_x, spline_y = self._get_spline_points(self.waypoints, self.close_loop)
+
+        if spline_x != []:
+            point_list = []
+
+            for k in range(len(spline_x)):
+                point_list.append(spline_x[k])
+                point_list.append(spline_y[k])
+
+            self.canvas.create_line(point_list, smooth=True, fill='blue', width=2)
 
     def _mouse_motion_cb(self, event):
         """
@@ -174,14 +195,59 @@ class TrackBuilder(tk.Frame):
         self.is_dragging = False
 
     def _add_button_cb(self):
-        """
-        """
         self.action_state = ADD_STATE
 
     def _delete_button_cb(self):
-        """
-        """
         self.action_state = DELETE_STATE
+
+    def _close_loop_button_cb(self):
+        if self.close_loop:
+            self.close_loop = False
+            self.close_loop_text.set("Close loop")
+        else:
+            self.close_loop = True
+            self.close_loop_text.set("Open loop")
+
+        self._update_window()
+
+
+    def _get_spline_points(self, waypoints, periodical):
+        """
+            Interpolates a list of waypoints
+
+            @param periodical: Whether the spline should be periodical
+            @return: [spline_x, spline_y] -> interpolated x and y coordinates
+        """
+        if len(waypoints) < 2:
+            return [], []
+
+        # Create a spline from the waypoints
+        wp_x = []
+        wp_y = []
+
+        for wp in waypoints:
+            wp_x.append(wp.x)
+            wp_y.append(wp.y)
+
+        if periodical:
+            wp_x.append(waypoints[0].x)
+            wp_y.append(waypoints[0].y)
+
+        wp_x = np.array(wp_x)
+        wp_y = np.array(wp_y)
+
+        if (len(wp_x) == 2):
+            spline, _ = splprep([wp_x, wp_y], u=None, s=0.0, per=periodical, k=1)  # straight line
+        elif (len(wp_x) == 3):
+            spline, _ = splprep([wp_x, wp_y], u=None, s=0.0, per=periodical, k=2)  # degree 2
+        else:
+            spline, _ = splprep([wp_x, wp_y], u=None, s=0.0, per=periodical )
+
+        # Interpolate the spline
+        interval = np.linspace(0, 1, 10 * len(waypoints))
+        spline_x, spline_y = splev(interval, spline, der=0)
+
+        return list(spline_x), list(spline_y)
 
 
 if __name__ == "__main__":
