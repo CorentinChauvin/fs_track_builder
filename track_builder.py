@@ -9,44 +9,68 @@ import numpy as np
 from scipy.interpolate import splprep, splev
 import tkinter as tk
 
-CANVAS_WIDTH = 800
-CANVAS_HEIGHT = 600
-WAYPOINTS_RADIUS = 5
+##########################################
+## Configurable constants
+#
+AREA_WIDTH = 40.0     # width (in meters) of the drawing area
+CANVAS_WIDTH = 800    # width (in pixels) of the drawing area
+CANVAS_HEIGHT = 600   # height (in pixels) of the drawing area
+WAYPOINTS_RADIUS = 5  # radius (in pixels) of the circle corresponding to a waypoint
 
+##########################################
+## Useful constants and functions
+#
 ADD_STATE = 'add'        # Adding waypoints
 DELETE_STATE = 'delete'  # Removing waypoints
+PXL_TO_M = float(AREA_WIDTH) / CANVAS_WIDTH
+M_TO_PXL = CANVAS_WIDTH / float(AREA_WIDTH)
 
 
+def pxl_to_m(x):
+    """ Converts a length in pixels to a length in meters
+    """
+    return float(x) * PXL_TO_M
+
+def m_to_pxl(x):
+    """ Converts a length in meters to a length in pixels
+    """
+    return int(x * M_TO_PXL)
+
+
+##########################################
+## Class Waypoint
+#
 class Waypoint(object):
     """
     """
     def __init__(self, x=0.0, y=0.0):
-        self.x = x
+        self.x = x  # spatial coordinates (in meters)
         self.y = y
+        self.pxl_x = m_to_pxl(x)  # canvas coordinates (in pixels)
+        self.pxl_y = m_to_pxl(y)
         self.is_hovered = False  # whether the mouse is over the waypoint
 
         self.radius = WAYPOINTS_RADIUS
-        self.left   = self.x - self.radius  # bounding box coordinates
-        self.right  = self.x + self.radius
-        self.top    = self.y - self.radius
-        self.bottom = self.y + self.radius
+        self.left   = self.pxl_x - self.radius  # bounding box coordinates
+        self.right  = self.pxl_x + self.radius
+        self.top    = self.pxl_y - self.radius
+        self.bottom = self.pxl_y + self.radius
 
     def is_colliding(self, x, y):
-        """ Checks whether a given point is within the waypoint
+        """ Checks whether a given canvas point is within the waypoint
         """
         return x >= self.left and x <= self.right \
             and y >= self.top and y <= self.bottom
 
-    def draw(self, canvas):
-        """ Draws the waypoint on a given canvas
+    def get_bounding_box(self):
+        """ Returns the waypoint bounding box
         """
-        bounding_box = (self.left, self.top, self.right, self.bottom)
-        canvas.create_oval(bounding_box, fill='red')
+        return (self.left, self.top, self.right, self.bottom)
 
     def update_hovering(self, x, y):
         """ Updates whether the mouse is hovering the waypoint given mouse coordinates
 
-            @ return: Whether the hovering state has changed
+            @return: Whether the hovering state has changed
         """
         if self.is_colliding(x, y):
             if not self.is_hovered:
@@ -66,19 +90,21 @@ class Waypoint(object):
         return False
 
     def update_position(self, x, y):
-        """ Updates the position of the waypoint
+        """ Updates the position of the waypoint given its spatial position
         """
         self.x = x
         self.y = y
+        self.pxl_x = m_to_pxl(x)
+        self.pxl_y = m_to_pxl(y)
         self._update_bounding_box()
 
     def _update_bounding_box(self):
         """ Updates the bounding box of the waypoint
         """
-        self.left   = self.x - self.radius
-        self.right  = self.x + self.radius
-        self.top    = self.y - self.radius
-        self.bottom = self.y + self.radius
+        self.left   = self.pxl_x - self.radius
+        self.right  = self.pxl_x + self.radius
+        self.top    = self.pxl_y - self.radius
+        self.bottom = self.pxl_y + self.radius
 
     def __repr__(self):
         return self._display()
@@ -92,6 +118,9 @@ class Waypoint(object):
         return "({}, {})".format(self.x, self.y)
 
 
+##########################################
+## Class TrackBuilder
+#
 class TrackBuilder(tk.Frame):
     """
     """
@@ -137,7 +166,7 @@ class TrackBuilder(tk.Frame):
 
         # Draw the waypoints
         for wp in self.waypoints:
-            wp.draw(self.canvas)
+            self.canvas.create_oval(wp.get_bounding_box(), fill='red')
 
         # Draw the center line
         spline_x, spline_y = self._get_spline_points(self.waypoints, self.close_loop)
@@ -146,8 +175,8 @@ class TrackBuilder(tk.Frame):
             point_list = []
 
             for k in range(len(spline_x)):
-                point_list.append(spline_x[k])
-                point_list.append(spline_y[k])
+                point_list.append(m_to_pxl(spline_x[k]))
+                point_list.append(m_to_pxl(spline_y[k]))
 
             self.canvas.create_line(point_list, smooth=True, fill='blue', width=2)
 
@@ -155,12 +184,14 @@ class TrackBuilder(tk.Frame):
         """
         """
         redraw = False  # whether the window needs to be drawn again
+        x = pxl_to_m(event.x)
+        y = pxl_to_m(event.y)
 
         if not self.is_dragging:
             for wp in self.waypoints:
                 redraw = wp.update_hovering(event.x, event.y) or redraw
         else:
-            self.waypoints[self.dragged_wp_idx].update_position(event.x, event.y)
+            self.waypoints[self.dragged_wp_idx].update_position(x, y)
             redraw = True
 
         if redraw:
@@ -169,6 +200,9 @@ class TrackBuilder(tk.Frame):
     def _left_click_cb(self, event):
         """
         """
+        x = pxl_to_m(event.x)
+        y = pxl_to_m(event.y)
+
         if self.action_state == ADD_STATE:
             # Check whether it collides with an already existing waypoint
             for i, wp in enumerate(self.waypoints):
@@ -178,7 +212,7 @@ class TrackBuilder(tk.Frame):
                     return
 
             # If not, add a new waypoint
-            self.waypoints.append(Waypoint(event.x, event.y))
+            self.waypoints.append(Waypoint(x, y))
             self._update_window()
 
         elif self.action_state == DELETE_STATE:
@@ -210,13 +244,12 @@ class TrackBuilder(tk.Frame):
 
         self._update_window()
 
-
     def _get_spline_points(self, waypoints, periodical):
         """
             Interpolates a list of waypoints
 
             @param periodical: Whether the spline should be periodical
-            @return: [spline_x, spline_y] -> interpolated x and y coordinates
+            @return: [pt_x, pt_y, d_x, d_y] -> interpolated spatial coordinates
         """
         if len(waypoints) < 2:
             return [], []
