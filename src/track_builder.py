@@ -1,4 +1,5 @@
 """
+    Definition of a class for building a Formula Student track
 """
 
 from math import sqrt

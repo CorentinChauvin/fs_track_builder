@@ -14,16 +14,18 @@ from src.config import *
 from src.utils import pxl_to_m, m_to_pxl, Point
 from src.waypoint import Waypoint
 from src.track_builder import TrackBuilder
+from src.track_exporter import TrackExporter
 
 ##########################################
 ## Class TrackBuilderGUI
 #
-class TrackBuilderGUI(tk.Frame, TrackBuilder):
+class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
     """
     """
     def __init__(self, parent=None):
         tk.Frame.__init__(self, parent)
         TrackBuilder.__init__(self)
+        TrackExporter.__init__(self)
 
         self.pack(fill=tk.BOTH, expand=True)
         self.top_frame1 = tk.Frame(self)
@@ -31,7 +33,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.top_frame2 = tk.Frame(self)
         self.top_frame2.pack(fill=tk.X, expand=False)
 
-        # First row of widget
+        # First row of widgets (left)
         add_button = tk.Button(self.top_frame1, text="Add/Move", command=self._add_button_cb)
         add_button.pack(side=tk.LEFT)
 
@@ -47,7 +49,14 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         clear_button = tk.Button(self.top_frame1, text="Clear", command=self._clear_button_cb)
         clear_button.pack(side=tk.LEFT)
 
-        # Second row of widget
+        # First row of widgets (right)
+        export_button = tk.Button(self.top_frame1, text="Export", command=self._export_button_cb)
+        export_button.pack(side=tk.RIGHT)
+
+        import_button = tk.Button(self.top_frame1, text="Import", command=self._import_button_cb)
+        import_button.pack(side=tk.RIGHT)
+
+        # Second row of widgets
         self.snap_grid_var = tk.IntVar()
         snap_grid_check = tk.Checkbutton(self.top_frame2, text=" Snap to grid", variable=self.snap_grid_var)
         snap_grid_check.pack(side=tk.LEFT)
@@ -120,12 +129,14 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         # Update and draw the center line
         center_points = self.compute_center_points(self.waypoints, self.close_loop)
         if center_points == []:
+            self.cones = {}
             return
         self.canvas.create_line(center_points, smooth=True, fill='blue', width=1, dash=(5, 10))
 
         # Update and draw sides
         left_points, right_points = self.compute_side_points(TRACK_WIDTH)
         if left_points == [] or right_points == []:
+            self.cones = {}
             return
         self.canvas.create_line(left_points, smooth=True, fill='green', width=1.5)
         self.canvas.create_line(right_points, smooth=True, fill='green', width=1.5)
@@ -136,7 +147,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         )
         radius = m_to_pxl(CONE_RADIUS)
 
-        for color in cones:
+        for color in self.cones:
             for cone in cones[color]:
                 x = m_to_pxl(cone.x)
                 y = m_to_pxl(cone.y)
@@ -227,6 +238,13 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
 
     def _clear_button_cb(self):
         self.waypoints = []
+        self._update_window()
+
+    def _export_button_cb(self):
+        self.export_track(self.cones, self.waypoints)
+
+    def _import_button_cb(self):
+        self.waypoints = self.import_track(WAYPOINTS_RADIUS)
         self._update_window()
 
     def _close_loop_cb(self, a, b, c):
