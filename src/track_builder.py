@@ -155,3 +155,10 @@ class TrackBuilder(object):
             n_y.append(-d_x[k] / norm)
 
         return list(pt_x), list(pt_y), n_x, n_y
+
+    def snap_coord_to_grid(self, x, y, grid_size):
+        """ Snaps spatial coordinates to a grid
+        """
+        x -= x % grid_size
+        y -= y % grid_size
+        return x, y

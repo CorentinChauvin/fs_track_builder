@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 """
     Graphical interface to build a Formula Student track
 
@@ -9,6 +9,7 @@
 ## Imports
 #
 import tkinter as tk
+from tkinter import ttk
 from src.config import *
 from src.utils import pxl_to_m, m_to_pxl, Point
 from src.waypoint import Waypoint
@@ -24,27 +25,40 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         tk.Frame.__init__(self, parent)
 
         self.pack(fill=tk.BOTH, expand=True)
-        self.top_frame = tk.Frame(self)
-        self.top_frame.pack(fill=tk.BOTH, expand=True)
+        self.top_frame1 = tk.Frame(self)
+        self.top_frame1.pack(fill=tk.X, expand=False)
+        self.top_frame2 = tk.Frame(self)
+        self.top_frame2.pack(fill=tk.X, expand=False)
 
-        # Left widgets
-        self.add_button = tk.Button(self.top_frame, text="Add/Move", command=self._add_button_cb)
+        # First row of widget
+        self.add_button = tk.Button(self.top_frame1, text="Add/Move", command=self._add_button_cb)
         self.add_button.pack(side=tk.LEFT)
 
-        self.delete_button = tk.Button(self.top_frame, text="Delete", command=self._delete_button_cb)
+        self.delete_button = tk.Button(self.top_frame1, text="Delete", command=self._delete_button_cb)
         self.delete_button.pack(side=tk.LEFT)
 
-        self.delete_last_button = tk.Button(self.top_frame, text="Delete last cone", command=self._delete_last_button_cb)
+        self.separator1 = ttk.Separator(self.top_frame1, orient=tk.VERTICAL)
+        self.separator1.pack(side=tk.LEFT, fill="y", padx=5)
+
+        self.delete_last_button = tk.Button(self.top_frame1, text="Delete last cone", command=self._delete_last_button_cb)
         self.delete_last_button.pack(side=tk.LEFT)
 
-        self.clear_button = tk.Button(self.top_frame, text="Clear", command=self._clear_button_cb)
+        self.clear_button = tk.Button(self.top_frame1, text="Clear", command=self._clear_button_cb)
         self.clear_button.pack(side=tk.LEFT)
 
-        # Right widgets (need to be added in reverse order)
-        self.close_loop_text = tk.StringVar()
-        self.close_loop_text.set('Close loop')
-        self.close_loop_button = tk.Button(self.top_frame, textvariable=self.close_loop_text, command=self._close_loop_button_cb)
-        self.close_loop_button.pack(side=tk.RIGHT)
+        # Second row of widget
+        self.snap_grid_var = tk.IntVar()
+        self.snap_grid_check = tk.Checkbutton(self.top_frame2, text=" Snap to grid", variable=self.snap_grid_var)
+        self.snap_grid_check.pack(side=tk.LEFT)
+        self.snap_grid_var.trace('w', self._snap_grid_cb)
+
+        self.close_loop_var = tk.IntVar()
+        self.close_loop_check = tk.Checkbutton(self.top_frame2, text=" Close loop", variable=self.close_loop_var)
+        self.close_loop_check.pack(side=tk.LEFT)
+        self.close_loop_var.trace('w', self._close_loop_cb)
+
+        self.separator2 = ttk.Separator(self.top_frame2, orient=tk.VERTICAL)
+        self.separator2.pack(side=tk.LEFT, fill="y", padx=5)
 
         self.inter_distance_var = tk.StringVar()
         self.inter_distance_var.set(str(DEFAULT_INTER_DISTANCE_CONES))
@@ -52,11 +66,12 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
             "w", lambda name, index, mode,
             sv=self.inter_distance_var: self._cones_inter_distance_cb(self.inter_distance_var)
         )
-        self.inter_distance_field = tk.Entry(self.top_frame, width=4, textvariable=self.inter_distance_var)
-        self.inter_distance_field.pack(side=tk.RIGHT)
 
-        self.inter_distance_lbl = tk.Label(self.top_frame, text="Cones inter distance (m):")
-        self.inter_distance_lbl.pack(side=tk.RIGHT)
+        self.inter_distance_lbl = tk.Label(self.top_frame2, text="Cones inter distance (m):")
+        self.inter_distance_lbl.pack(side=tk.LEFT)
+
+        self.inter_distance_field = tk.Entry(self.top_frame2, width=4, textvariable=self.inter_distance_var)
+        self.inter_distance_field.pack(side=tk.LEFT)
 
         # Canvas
         self.canvas = tk.Canvas(self)
@@ -67,6 +82,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.canvas.bind("<Motion>", self._mouse_motion_cb)
         self.canvas.bind("<Button-1>", self._left_click_cb)
         self.canvas.bind("<ButtonRelease-1>", self._left_release_cb)
+        self.canvas.bind("<Control-Button-1>", self._ctrl_left_click_cb)
+        self.canvas.focus_set()  # give focus to the canvas so that it captures key events
 
         # Initialise other variables
         self.action_state = ADD_STATE
@@ -75,6 +92,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.dragged_wp_idx = None  # Index of the dragged waypoint
         self.close_loop = False     # Whether to close the loop
         self.cones_inter_distance = DEFAULT_INTER_DISTANCE_CONES
+        self.snap_grid = False  # whether to snap waypoint moving/adding to grid
+        self.grid_size = DEFAULT_GRID_SIZE
 
     def _update_window(self):
         """ Draw all the objects in the window again
@@ -117,16 +136,29 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
     def _mouse_motion_cb(self, event):
         """
         """
+        self.canvas.focus_set()  # give focus to the canvas so that it captures key events
+
         redraw = False  # whether the window needs to be drawn again
-        x = pxl_to_m(event.x)
-        y = pxl_to_m(event.y)
 
         if not self.is_dragging:
             for wp in self.waypoints:
                 redraw = wp.update_hovering(event.x, event.y) or redraw
         else:
-            self.waypoints[self.dragged_wp_idx].update_position(x, y)
-            redraw = True
+            x = pxl_to_m(event.x)
+            y = pxl_to_m(event.y)
+
+            if self.snap_grid or (event.state == 276):
+                x, y = self.snap_coord_to_grid(x, y, self.grid_size)
+
+            # Check whether it would collides with another waypoint
+            collision = False
+            for i, wp in enumerate(self.waypoints):
+                if wp.is_colliding(m_to_pxl(x), m_to_pxl(y)):
+                    collision = True
+                    break
+            if not collision:
+                self.waypoints[self.dragged_wp_idx].update_position(x, y)
+                redraw = True
 
         if redraw:
             self._update_window()
@@ -134,10 +166,20 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
     def _left_click_cb(self, event):
         """
         """
-        x = pxl_to_m(event.x)
-        y = pxl_to_m(event.y)
 
         if self.action_state == ADD_STATE:
+            # Snaps to grid if necessary
+            x = pxl_to_m(event.x)
+            y = pxl_to_m(event.y)
+
+            if self.snap_grid:
+                x, y = self.snap_coord_to_grid(x, y, self.grid_size)
+                pxl_x = m_to_pxl(x)
+                pxl_y = m_to_pxl(y)
+            else:
+                pxl_x = event.x
+                pxl_y = event.y
+
             # Check whether it collides with an already existing waypoint
             for i, wp in enumerate(self.waypoints):
                 if wp.is_colliding(event.x, event.y):
@@ -158,9 +200,10 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
             self._update_window()
 
     def _left_release_cb(self, event):
-        """
-        """
         self.is_dragging = False
+
+    def _ctrl_left_click_cb(self, event):
+        self._left_click_cb(event)
 
     def _add_button_cb(self):
         self.action_state = ADD_STATE
@@ -177,15 +220,12 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.waypoints = []
         self._update_window()
 
-    def _close_loop_button_cb(self):
-        if self.close_loop:
-            self.close_loop = False
-            self.close_loop_text.set("Close loop")
-        else:
-            self.close_loop = True
-            self.close_loop_text.set("Open loop")
-
+    def _close_loop_cb(self, a, b, c):
+        self.close_loop = self.close_loop_var.get()
         self._update_window()
+
+    def _snap_grid_cb(self, a, b, c):
+        self.snap_grid = self.snap_grid_var.get()
 
     def _cones_inter_distance_cb(self, string_var):
         try:
