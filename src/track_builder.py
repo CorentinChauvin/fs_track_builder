@@ -19,8 +19,7 @@ class TrackBuilder(object):
         self.left_points = []   # interpolated points of the sides of the track
         self.right_points = []
 
-        self.left_cones = []  # cones position
-        self.right_cones = []
+        self.cones = {}  # dictionnary of cones, ordered by colors ('blue', 'yellow', 'orange')
 
     def compute_center_points(self, waypoints, close_loop):
         """ Interpolates track center points between the waypoints
@@ -30,7 +29,7 @@ class TrackBuilder(object):
             @return: List of pixel coordinates ready to draw the center line
                 [x1, y1, x2, y2, ...]
         """
-        pt_x, pt_y, n_x, n_y = self._get_spline_points(self.waypoints, self.close_loop)
+        pt_x, pt_y, n_x, n_y = self._get_spline_points(waypoints, close_loop)
         self.center_pts_x = pt_x
         self.center_pts_y = pt_y
         self.center_n_x = n_x
@@ -71,33 +70,60 @@ class TrackBuilder(object):
 
         return left_points_list, right_points_list
 
-    def compute_cones(self, inter_distance):
+    def compute_cones(self, spacing, orange_spacing, close_loop):
         """ Compute the position of the cones on the two sides
 
-            @param inter_distance: Distance (in meters) between two consecutive cones
-            @return: List of cones position (in meters)
+            @param spacing: Distance (in meters) between two consecutive cones
+            @param orange_spacing: Distance (in meters) between orange cones
+            @param close_loop: Whether the loop is closed
+            @return: Dictionnary of cones position (in m), ordered by colors
+                ('blue', 'yellow', 'orange')
         """
-        left_cones_x, left_cones_y, _, _ = self._get_spline_points(self.left_points, False, inter_distance)
-        right_cones_x, right_cones_y, _, _ = self._get_spline_points(self.right_points, False, inter_distance)
+        left_cones_x, left_cones_y, left_n_x, left_n_y = \
+            self._get_spline_points(self.left_points, False, spacing)
+        right_cones_x, right_cones_y, right_n_x, right_n_y = \
+            self._get_spline_points(self.right_points, False, spacing)
 
-        self.left_cones = [
+        # Add blue and yellow cones
+        offset = -1 if close_loop else 0  # not taking the last cone if the loop is closed
+
+        self.cones['blue'] = [
             Point(left_cones_x[k], left_cones_y[k])
-            for k in range(len(left_cones_x))
+            for k in range(1, len(left_cones_x) + offset)
         ]
-        self.right_cones = [
+        self.cones['yellow'] = [
             Point(right_cones_x[k], right_cones_y[k])
-            for k in range(len(right_cones_x))
+            for k in range(1, len(right_cones_x) + offset)
         ]
 
-        return self.left_cones, self.right_cones
+        # Add orange cones
+        self.cones['orange'] = []
 
-    def _get_spline_points(self, points, periodical, inter_distance=0.0):
+        if left_n_x != [] and right_n_x != []:
+            def add_orange(cones_x, cones_y, normals_x, normals_y):
+                d_x = normals_y[0]
+                d_y = -normals_x[0]
+                dist = 0.5 * orange_spacing
+
+                self.cones['orange'].append(
+                    Point(cones_x[0] + dist*d_x, cones_y[0] + dist*d_y)
+                )
+                self.cones['orange'].append(
+                    Point(cones_x[0] - dist*d_x, cones_y[0] - dist*d_y)
+                )
+
+            add_orange(left_cones_x, left_cones_y, left_n_x, left_n_y)
+            add_orange(right_cones_x, right_cones_y, right_n_x, right_n_y)
+
+        return self.cones
+
+    def _get_spline_points(self, points, periodical, spacing=0.0):
         """
             Interpolates a list of points
 
             @param points:  List of points to interpolate between
             @param periodical: Whether the spline should be periodical
-            @param inter_distance: Distance between interpolated points (0.0 for a dense interpolation)
+            @param spacing: Distance between interpolated points (0.0 for a dense interpolation)
             @return: [pt_x, pt_y, n_x, n_y]
                 - pt_x, pt_y -> interpolated spatial coordinates
                 - d_x, d_y -> normals to the interpolated points (of unit length)
@@ -129,14 +155,14 @@ class TrackBuilder(object):
             spline, _ = splprep([wp_x, wp_y], u=None, s=0.0, per=periodical)
 
         # Determine number of interpolated points
-        if inter_distance <= 0.0:
+        if spacing <= 0.0:
             n = 10 * len(points)
         else:
             # Estimate total length of the spline
             length = 0.0
             for k in range(len(points)-1):
                 length += sqrt((wp_x[k+1]-wp_x[k])**2 + (wp_y[k+1]-wp_y[k])**2)
-            n = int(length / inter_distance)
+            n = int(length / spacing)
 
             if n == 0:
                 return [], [], [], []

@@ -23,6 +23,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
     """
     def __init__(self, parent=None):
         tk.Frame.__init__(self, parent)
+        TrackBuilder.__init__(self)
 
         self.pack(fill=tk.BOTH, expand=True)
         self.top_frame1 = tk.Frame(self)
@@ -31,47 +32,58 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.top_frame2.pack(fill=tk.X, expand=False)
 
         # First row of widget
-        self.add_button = tk.Button(self.top_frame1, text="Add/Move", command=self._add_button_cb)
-        self.add_button.pack(side=tk.LEFT)
+        add_button = tk.Button(self.top_frame1, text="Add/Move", command=self._add_button_cb)
+        add_button.pack(side=tk.LEFT)
 
-        self.delete_button = tk.Button(self.top_frame1, text="Delete", command=self._delete_button_cb)
-        self.delete_button.pack(side=tk.LEFT)
+        delete_button = tk.Button(self.top_frame1, text="Delete", command=self._delete_button_cb)
+        delete_button.pack(side=tk.LEFT)
 
-        self.separator1 = ttk.Separator(self.top_frame1, orient=tk.VERTICAL)
-        self.separator1.pack(side=tk.LEFT, fill="y", padx=5)
+        separator = ttk.Separator(self.top_frame1, orient=tk.VERTICAL)
+        separator.pack(side=tk.LEFT, fill="y", padx=5)
 
-        self.delete_last_button = tk.Button(self.top_frame1, text="Delete last cone", command=self._delete_last_button_cb)
-        self.delete_last_button.pack(side=tk.LEFT)
+        delete_last_button = tk.Button(self.top_frame1, text="Delete last cone", command=self._delete_last_button_cb)
+        delete_last_button.pack(side=tk.LEFT)
 
-        self.clear_button = tk.Button(self.top_frame1, text="Clear", command=self._clear_button_cb)
-        self.clear_button.pack(side=tk.LEFT)
+        clear_button = tk.Button(self.top_frame1, text="Clear", command=self._clear_button_cb)
+        clear_button.pack(side=tk.LEFT)
 
         # Second row of widget
         self.snap_grid_var = tk.IntVar()
-        self.snap_grid_check = tk.Checkbutton(self.top_frame2, text=" Snap to grid", variable=self.snap_grid_var)
-        self.snap_grid_check.pack(side=tk.LEFT)
+        snap_grid_check = tk.Checkbutton(self.top_frame2, text=" Snap to grid", variable=self.snap_grid_var)
+        snap_grid_check.pack(side=tk.LEFT)
         self.snap_grid_var.trace('w', self._snap_grid_cb)
 
         self.close_loop_var = tk.IntVar()
-        self.close_loop_check = tk.Checkbutton(self.top_frame2, text=" Close loop", variable=self.close_loop_var)
-        self.close_loop_check.pack(side=tk.LEFT)
+        close_loop_check = tk.Checkbutton(self.top_frame2, text=" Close loop", variable=self.close_loop_var)
+        close_loop_check.pack(side=tk.LEFT)
         self.close_loop_var.trace('w', self._close_loop_cb)
 
-        self.separator2 = ttk.Separator(self.top_frame2, orient=tk.VERTICAL)
-        self.separator2.pack(side=tk.LEFT, fill="y", padx=5)
+        separator = ttk.Separator(self.top_frame2, orient=tk.VERTICAL)
+        separator.pack(side=tk.LEFT, fill="y", padx=5)
 
-        self.inter_distance_var = tk.StringVar()
-        self.inter_distance_var.set(str(DEFAULT_INTER_DISTANCE_CONES))
-        self.inter_distance_var.trace(
+        self.spacing_var = tk.StringVar()
+        self.spacing_var.set(str(DEFAULT_SPACING_CONES))
+        self.spacing_var.trace(
             "w", lambda name, index, mode,
-            sv=self.inter_distance_var: self._cones_inter_distance_cb(self.inter_distance_var)
+            sv=self.spacing_var:
+                self._cones_spacing_cb(self.spacing_var)
         )
+        spacing_lbl = tk.Label(self.top_frame2, text="Cones spacing (m):")
+        spacing_lbl.pack(side=tk.LEFT)
+        spacing_field = tk.Entry(self.top_frame2, width=4, textvariable=self.spacing_var)
+        spacing_field.pack(side=tk.LEFT)
 
-        self.inter_distance_lbl = tk.Label(self.top_frame2, text="Cones inter distance (m):")
-        self.inter_distance_lbl.pack(side=tk.LEFT)
-
-        self.inter_distance_field = tk.Entry(self.top_frame2, width=4, textvariable=self.inter_distance_var)
-        self.inter_distance_field.pack(side=tk.LEFT)
+        self.orange_spacing_var = tk.StringVar()
+        self.orange_spacing_var.set(str(DEFAULT_SPACING_ORANGE))
+        self.orange_spacing_var.trace(
+            "w", lambda name, index, mode,
+            sv=self.orange_spacing_var:
+                self._orange_spacing_cb(self.orange_spacing_var)
+        )
+        spacing_orange_lbl = tk.Label(self.top_frame2, text="Orange cones spacing (m):")
+        spacing_orange_lbl.pack(side=tk.LEFT)
+        spacing_orange_field = tk.Entry(self.top_frame2, width=4, textvariable=self.orange_spacing_var)
+        spacing_orange_field.pack(side=tk.LEFT)
 
         # Canvas
         self.canvas = tk.Canvas(self)
@@ -91,7 +103,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.is_dragging = False    # Whether a waypoint is being dragged (ie moved)
         self.dragged_wp_idx = None  # Index of the dragged waypoint
         self.close_loop = False     # Whether to close the loop
-        self.cones_inter_distance = DEFAULT_INTER_DISTANCE_CONES
+        self.cones_spacing = DEFAULT_SPACING_CONES
+        self.orange_spacing = DEFAULT_SPACING_ORANGE
         self.snap_grid = False  # whether to snap waypoint moving/adding to grid
         self.grid_size = DEFAULT_GRID_SIZE
 
@@ -118,20 +131,16 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
         self.canvas.create_line(right_points, smooth=True, fill='green', width=1.5)
 
         # Update and draw cones
-        left_cones, right_cones = self.compute_cones(self.cones_inter_distance)
-        if left_cones == [] or right_cones == []:
-            return
+        cones = self.compute_cones(
+            self.cones_spacing, self.orange_spacing, self.close_loop
+        )
         radius = m_to_pxl(CONE_RADIUS)
 
-        for cone in left_cones:
-            x = m_to_pxl(cone.x)
-            y = m_to_pxl(cone.y)
-            self.canvas.create_oval([x-radius, y-radius, x+radius, y+radius], fill='yellow')
-
-        for cone in right_cones:
-            x = m_to_pxl(cone.x)
-            y = m_to_pxl(cone.y)
-            self.canvas.create_oval([x-radius, y-radius, x+radius, y+radius], fill='blue')
+        for color in cones:
+            for cone in cones[color]:
+                x = m_to_pxl(cone.x)
+                y = m_to_pxl(cone.y)
+                self.canvas.create_oval([x-radius, y-radius, x+radius, y+radius], fill=color)
 
     def _mouse_motion_cb(self, event):
         """
@@ -227,9 +236,16 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder):
     def _snap_grid_cb(self, a, b, c):
         self.snap_grid = self.snap_grid_var.get()
 
-    def _cones_inter_distance_cb(self, string_var):
+    def _cones_spacing_cb(self, string_var):
         try:
-            self.cones_inter_distance = float(string_var.get())
+            self.cones_spacing = float(string_var.get())
+            self._update_window()
+        except ValueError:  # catch wrong inputs
+            pass
+
+    def _orange_spacing_cb(self, string_var):
+        try:
+            self.orange_spacing = float(string_var.get())
             self._update_window()
         except ValueError:  # catch wrong inputs
             pass

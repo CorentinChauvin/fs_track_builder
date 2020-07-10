@@ -11,7 +11,8 @@ CANVAS_HEIGHT = 600   # height (in pixels) of the drawing area
 TRACK_WIDTH = 3.0     # track width in meters
 WAYPOINTS_RADIUS = 5  # radius (in pixels) of the circle corresponding to a waypoint
 CONE_RADIUS = 0.3     # radius (in meters) of the cones
-DEFAULT_INTER_DISTANCE_CONES = 3.0  # defaut distance between each cones
+DEFAULT_SPACING_CONES = 3.0   # defaut distance between each cones
+DEFAULT_SPACING_ORANGE = 0.5  # default distance between orange cones
 DEFAULT_GRID_SIZE = 1.0
 
 ##########################################
