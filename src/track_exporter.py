@@ -12,11 +12,12 @@ class TrackExporter(object):
     """ Base class for the TrackBuilderGUI, handles importing/exporting tracks
     """
 
-    def export_track(self, cones, waypoints):
+    def export_track(self, cones, waypoints, initial_pose):
         """ Exports the track as a YAML file
 
-            @param cones:     Dictionary of cones coordinates (sorted by color)
-            @param waypoints: List of waypoints
+            @param cones:        Dictionary of cones coordinates (sorted by color)
+            @param waypoints:    List of waypoints
+            @param initial_pose: [x, y, yaw] -> initial pose of the car (m and radians)
         """
         f = asksaveasfile(
             mode="w",
@@ -28,9 +29,9 @@ class TrackExporter(object):
 
         # Initial pose
         f.write("initial_pose:\n")
-        f.write("  x: {:7.2f}  # x coordinate of the rear axle\n".format(0.0))
-        f.write("  y: {:7.2f}  # y coordinate of the rear axle\n".format(0.0))
-        f.write("  z: {:7.2f}  # yaw in radians\n".format(0.0))
+        f.write("  x: {:7.2f}  # x coordinate of the rear axle\n".format(initial_pose[0]))
+        f.write("  y: {:7.2f}  # y coordinate of the rear axle\n".format(initial_pose[1]))
+        f.write("  z: {:7.2f}  # yaw in radians\n".format(initial_pose[2]))
 
         # Cones
         f.write("\ncones:\n")
@@ -65,9 +66,13 @@ class TrackExporter(object):
             filetypes=(("YAML files", "*.yaml"), ("All files", "*.*"))
         )
 
-        f = open(file_name, 'r')
-        if f is None:
+        try:
+            f = open(file_name, 'r')
+        except Exception:
             return []
+        else:
+            if f is None:
+                return []
 
         data = yaml.load(f, Loader=yaml.FullLoader)
         f.close()

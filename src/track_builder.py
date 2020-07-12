@@ -2,7 +2,7 @@
     Definition of a class for building a Formula Student track
 """
 
-from math import sqrt
+from math import sqrt, atan2
 import numpy as np
 from scipy.interpolate import splprep, splev
 from src.utils import m_to_pxl, Point
@@ -102,8 +102,8 @@ class TrackBuilder(object):
 
         if left_n_x != [] and right_n_x != []:
             def add_orange(cones_x, cones_y, normals_x, normals_y):
-                d_x = normals_y[0]
-                d_y = -normals_x[0]
+                d_x = -normals_y[0]
+                d_y = normals_x[0]
                 dist = 0.5 * orange_spacing
 
                 self.cones['orange'].append(
@@ -117,6 +117,22 @@ class TrackBuilder(object):
             add_orange(right_cones_x, right_cones_y, right_n_x, right_n_y)
 
         return self.cones
+
+    def compute_start_pose(self, waypoints, initial_pose_offset):
+        """ Computes the starting pose of the car
+
+            @param waypoints: List of waypoints of the track
+            @param initial_pose_offset: List of offsets
+            @return: [x, y, yaw] -> initial pose (m and radians)
+        """
+        position = np.array([waypoints[0].x, waypoints[0].y])
+        n_vector = np.array([self.center_n_x[0], self.center_n_y[0]])  # normal vector
+        d_vector = np.array([-n_vector[1], n_vector[0]])  # longitudinal vector
+
+        position += initial_pose_offset['x']*d_vector + initial_pose_offset['y']*n_vector
+        yaw = atan2(d_vector[1], d_vector[0]) + initial_pose_offset['yaw']
+
+        return position[0], position[1], yaw
 
     def _get_spline_points(self, points, periodical, spacing=0.0):
         """

@@ -8,6 +8,7 @@
 ##########################################
 ## Imports
 #
+from math import cos, sin, radians
 import tkinter as tk
 from tkinter import ttk
 from src.config import *
@@ -15,6 +16,7 @@ from src.utils import pxl_to_m, m_to_pxl, Point
 from src.waypoint import Waypoint
 from src.track_builder import TrackBuilder
 from src.track_exporter import TrackExporter
+from src.offset_slider import OffsetSlider
 
 ##########################################
 ## Class TrackBuilderGUI
@@ -27,11 +29,30 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         TrackBuilder.__init__(self)
         TrackExporter.__init__(self)
 
+        # Initialise diverse variables
+        self.action_state = ADD_STATE
+        self.waypoints = []
+        self.is_dragging = False    # Whether a waypoint is being dragged (ie moved)
+        self.dragged_wp_idx = None  # Index of the dragged waypoint
+        self.close_loop = False     # Whether to close the loop
+        self.cones_spacing = DEFAULT_SPACING_CONES
+        self.orange_spacing = DEFAULT_SPACING_ORANGE
+        self.snap_grid = False  # whether to snap waypoint moving/adding to grid
+        self.grid_size = DEFAULT_GRID_SIZE
+        self.initial_pose = [0.0, 0.0, 0.0]
+        self.initial_pose_offset = {}
+        self.initial_pose_offset['x'] = INIT_OFFSET_X
+        self.initial_pose_offset['y'] = INIT_OFFSET_Y
+        self.initial_pose_offset['yaw'] = radians(INIT_OFFSET_YAW)
+
+        # Initialise window
         self.pack(fill=tk.BOTH, expand=True)
         self.top_frame1 = tk.Frame(self)
         self.top_frame1.pack(fill=tk.X, expand=False)
         self.top_frame2 = tk.Frame(self)
         self.top_frame2.pack(fill=tk.X, expand=False)
+        self.top_frame3 = tk.Frame(self)
+        self.top_frame3.pack(fill=tk.X, expand=False)
 
         # First row of widgets (left)
         add_button = tk.Button(self.top_frame1, text="Add/Move", command=self._add_button_cb)
@@ -94,6 +115,13 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         spacing_orange_field = tk.Entry(self.top_frame2, width=4, textvariable=self.orange_spacing_var)
         spacing_orange_field.pack(side=tk.LEFT)
 
+        # Third row of widgets
+        offset_lbl = tk.Label(self.top_frame3, text="Offset on the initial pose (m and °):")
+        offset_lbl.pack(side=tk.LEFT)
+        self.slider_x = OffsetSlider('x', [-3.0, 3.0], self)
+        self.slider_y = OffsetSlider('y', [-1.5, 1.5], self)
+        self.slider_yaw = OffsetSlider('yaw', [-90, 90], self)
+
         # Canvas
         self.canvas = tk.Canvas(self)
         self.canvas.config(width=CANVAS_WIDTH, height=CANVAS_HEIGHT, background="white")
@@ -106,18 +134,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.canvas.bind("<Control-Button-1>", self._ctrl_left_click_cb)
         self.canvas.focus_set()  # give focus to the canvas so that it captures key events
 
-        # Initialise other variables
-        self.action_state = ADD_STATE
-        self.waypoints = []
-        self.is_dragging = False    # Whether a waypoint is being dragged (ie moved)
-        self.dragged_wp_idx = None  # Index of the dragged waypoint
-        self.close_loop = False     # Whether to close the loop
-        self.cones_spacing = DEFAULT_SPACING_CONES
-        self.orange_spacing = DEFAULT_SPACING_ORANGE
-        self.snap_grid = False  # whether to snap waypoint moving/adding to grid
-        self.grid_size = DEFAULT_GRID_SIZE
-
-    def _update_window(self):
+    def update_window(self):
         """ Draw all the objects in the window again
         """
         self.canvas.delete(tk.ALL)
@@ -153,8 +170,18 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
                 y = m_to_pxl(cone.y)
                 self.canvas.create_oval([x-radius, y-radius, x+radius, y+radius], fill=color)
 
+        # Update and draw starting position
+        self.initial_pose = self.compute_start_pose(self.waypoints, self.initial_pose_offset)
+        x1 = m_to_pxl(self.initial_pose[0])
+        y1 = m_to_pxl(self.initial_pose[1])
+        x2 = x1 + 20*cos(self.initial_pose[2])
+        y2 = y1 + 20*sin(self.initial_pose[2])
+        self.canvas.create_line(x1, y1, x2, y2, arrow=tk.LAST, arrowshape="8 10 5", width=5, fill="red")
+
     def _mouse_motion_cb(self, event):
-        """
+        """ Callback for any motion of the mouse
+
+            Moves waypoint if it is being dragged.
         """
         self.canvas.focus_set()  # give focus to the canvas so that it captures key events
 
@@ -173,7 +200,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             # Check whether it would collides with another waypoint
             collision = False
             for i, wp in enumerate(self.waypoints):
-                if wp.is_colliding(m_to_pxl(x), m_to_pxl(y)):
+                if i != self.dragged_wp_idx and wp.is_colliding(m_to_pxl(x), m_to_pxl(y)):
                     collision = True
                     break
             if not collision:
@@ -181,10 +208,12 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
                 redraw = True
 
         if redraw:
-            self._update_window()
+            self.update_window()
 
     def _left_click_cb(self, event):
-        """
+        """ Callback for the left click
+
+            Adds, deletes or moves waypoints, depending on the action state
         """
 
         if self.action_state == ADD_STATE:
@@ -209,7 +238,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
             # If not, add a new waypoint
             self.waypoints.append(Waypoint(x, y, WAYPOINTS_RADIUS))
-            self._update_window()
+            self.update_window()
 
         elif self.action_state == DELETE_STATE:
             for i, wp in enumerate(self.waypoints):
@@ -217,7 +246,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
                     del self.waypoints[i]
                     break
 
-            self._update_window()
+            self.update_window()
 
     def _left_release_cb(self, event):
         self.is_dragging = False
@@ -234,22 +263,25 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
     def _delete_last_button_cb(self):
         if self.waypoints != []:
             del self.waypoints[-1]
-            self._update_window()
+            self.update_window()
 
     def _clear_button_cb(self):
         self.waypoints = []
-        self._update_window()
+        self.update_window()
 
     def _export_button_cb(self):
-        self.export_track(self.cones, self.waypoints)
+        self.export_track(self.cones, self.waypoints, self.initial_pose)
 
     def _import_button_cb(self):
-        self.waypoints = self.import_track(WAYPOINTS_RADIUS)
-        self._update_window()
+        new_waypoints = self.import_track(WAYPOINTS_RADIUS)
+
+        if new_waypoints != []:
+            self.waypoints = new_waypoints
+            self.update_window()
 
     def _close_loop_cb(self, a, b, c):
         self.close_loop = self.close_loop_var.get()
-        self._update_window()
+        self.update_window()
 
     def _snap_grid_cb(self, a, b, c):
         self.snap_grid = self.snap_grid_var.get()
@@ -257,14 +289,14 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
     def _cones_spacing_cb(self, string_var):
         try:
             self.cones_spacing = float(string_var.get())
-            self._update_window()
+            self.update_window()
         except ValueError:  # catch wrong inputs
             pass
 
     def _orange_spacing_cb(self, string_var):
         try:
             self.orange_spacing = float(string_var.get())
-            self._update_window()
+            self.update_window()
         except ValueError:  # catch wrong inputs
             pass
 
