@@ -10,6 +10,9 @@ from src.waypoint import Waypoint
 
 class TrackExporter(object):
     """ Base class for the TrackBuilderGUI, handles importing/exporting tracks
+
+        The y-axis is inversed both at the import and export, such that the top
+        left corner corresponds to the negative coordinates.
     """
 
     def export_track(self, cones, waypoints, initial_pose):
@@ -41,7 +44,7 @@ class TrackExporter(object):
             f.write("  {}: [\n".format(color))
 
             for cone in cones[key]:
-                f.write("    [{:.2f}, {:.2f}],\n".format(cone.x, cone.y))
+                f.write("    [{:.2f}, {:.2f}],\n".format(cone.x, -cone.y))
 
             f.write("  ]\n")
 
@@ -79,7 +82,7 @@ class TrackExporter(object):
 
         waypoints = [
             Waypoint(
-                data['waypoints'][k][0], data['waypoints'][k][1], waypoint_radius
+                data['waypoints'][k][0], -data['waypoints'][k][1], waypoint_radius
             )
             for k in range(len(data['waypoints']))
         ]

@@ -1,6 +1,5 @@
 """
-    Convenience class for defining sliders to modify the offsets on the initial
-    pose
+    Convenience classes for defining some sliders
 """
 
 from math import radians
@@ -38,3 +37,33 @@ class OffsetSlider(object):
 
         self.gui.initial_pose_offset[self.key] = value
         self.gui.update_window()
+
+
+class BasicSlider(object):
+    """ Basic slider storing one double value
+    """
+    def __init__(self, default_value, bounds, resolution, gui, frame):
+        """ @param default_value: default value of the slider
+            @param bounds: [min, max] -> bounds on the offset
+            @param resolution: resolution of the slider
+            @param gui: reference to the TrackBuilderGUI instance
+            @param frame: tk frame in which add the slider
+        """
+        self.gui = gui
+        self.var = tk.DoubleVar()
+        self.var.set(default_value)
+
+        self.var.trace(
+            "w", lambda name, index, mode,
+            sv=self.var: self._callback(self.var)
+        )
+        scale = tk.Scale(
+            frame, from_=bounds[0], to=bounds[1], resolution=resolution,
+            orient=tk.HORIZONTAL, variable=self.var)
+        scale.pack(side=tk.LEFT)
+
+    def _callback(self, var):
+        self.gui.update_window()
+
+    def get_value(self):
+        return self.var.get()

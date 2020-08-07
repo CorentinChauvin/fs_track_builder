@@ -71,19 +71,21 @@ class TrackBuilder(object):
 
         return left_points_list, right_points_list
 
-    def compute_cones(self, spacing, orange_spacing, close_loop):
+    def compute_cones(self, spacing, std_spacing, orange_spacing, close_loop):
         """ Compute the position of the cones on the two sides
 
             @param spacing: Distance (in meters) between two consecutive cones
+            @param std_spacing: Standard deviation (in m) of the distance between
+                                two consecutive cones
             @param orange_spacing: Distance (in meters) between orange cones
             @param close_loop: Whether the loop is closed
             @return: Dictionnary of cones position (in m), ordered by colors
                 ('blue', 'yellow', 'orange')
         """
         left_cones_x, left_cones_y, left_n_x, left_n_y = \
-            self._get_spline_points(self.left_points, False, spacing)
+            self._get_spline_points(self.left_points, False, spacing, std_spacing)
         right_cones_x, right_cones_y, right_n_x, right_n_y = \
-            self._get_spline_points(self.right_points, False, spacing)
+            self._get_spline_points(self.right_points, False, spacing, std_spacing)
 
         # Add blue and yellow cones
         offset = -1 if close_loop else 0  # not taking the last cone if the loop is closed
@@ -134,13 +136,17 @@ class TrackBuilder(object):
 
         return position[0], position[1], yaw
 
-    def _get_spline_points(self, points, periodical, spacing=0.0):
+    def _get_spline_points(self, points, periodical, spacing=0.0, std_spacing=0.0):
         """
             Interpolates a list of points
 
             @param points:  List of points to interpolate between
             @param periodical: Whether the spline should be periodical
-            @param spacing: Distance between interpolated points (0.0 for a dense interpolation)
+            @param spacing: Distance between interpolated points (0.0 for a
+                            dense interpolation)
+            @param std_spacing: Standard deviation of the distance
+                                between interpolated points (0.0 for
+                                no randomisation)
             @return: [pt_x, pt_y, n_x, n_y]
                 - pt_x, pt_y -> interpolated spatial coordinates
                 - d_x, d_y -> normals to the interpolated points (of unit length)
@@ -186,6 +192,14 @@ class TrackBuilder(object):
 
         # Interpolate the spline
         interval = np.linspace(0, 1, n)
+
+        if std_spacing > 0.0 and length > 0.0:
+            std = std_spacing / length
+
+            for k in range(1, n-1):
+                interval[k] += np.random.normal(0, std)
+                interval[k] = max(0, min(1, interval[k]))
+
         pt_x, pt_y = splev(interval, spline, der=0)
 
         # Get the normals

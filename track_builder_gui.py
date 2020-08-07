@@ -16,7 +16,7 @@ from src.utils import pxl_to_m, m_to_pxl, Point
 from src.waypoint import Waypoint
 from src.track_builder import TrackBuilder
 from src.track_exporter import TrackExporter
-from src.offset_slider import OffsetSlider
+from src.sliders import OffsetSlider, BasicSlider
 
 ##########################################
 ## Class TrackBuilderGUI
@@ -93,6 +93,18 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         separator = ttk.Separator(self.top_frame2, orient=tk.VERTICAL)
         separator.pack(side=tk.LEFT, fill="y", padx=5)
 
+        self.orange_spacing_var = tk.StringVar()
+        self.orange_spacing_var.set(str(DEFAULT_SPACING_ORANGE))
+        self.orange_spacing_var.trace(
+            "w", lambda name, index, mode,
+            sv=self.orange_spacing_var:
+                self._orange_spacing_cb(self.orange_spacing_var)
+        )
+        spacing_orange_lbl = tk.Label(self.top_frame2, text="Orange cones spacing (m):")
+        spacing_orange_lbl.pack(side=tk.LEFT)
+        spacing_orange_field = tk.Entry(self.top_frame2, width=4, textvariable=self.orange_spacing_var)
+        spacing_orange_field.pack(side=tk.LEFT)
+
         self.spacing_var = tk.StringVar()
         self.spacing_var.set(str(DEFAULT_SPACING_CONES))
         self.spacing_var.trace(
@@ -105,17 +117,9 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         spacing_field = tk.Entry(self.top_frame2, width=4, textvariable=self.spacing_var)
         spacing_field.pack(side=tk.LEFT)
 
-        self.orange_spacing_var = tk.StringVar()
-        self.orange_spacing_var.set(str(DEFAULT_SPACING_ORANGE))
-        self.orange_spacing_var.trace(
-            "w", lambda name, index, mode,
-            sv=self.orange_spacing_var:
-                self._orange_spacing_cb(self.orange_spacing_var)
-        )
-        spacing_orange_lbl = tk.Label(self.top_frame2, text="Orange cones spacing (m):")
-        spacing_orange_lbl.pack(side=tk.LEFT)
-        spacing_orange_field = tk.Entry(self.top_frame2, width=4, textvariable=self.orange_spacing_var)
-        spacing_orange_field.pack(side=tk.LEFT)
+        random_spacing_lbl = tk.Label(self.top_frame2, text="Randomisation of cones spacing (m):")
+        random_spacing_lbl.pack(side=tk.LEFT)
+        self.random_spacing_slider = BasicSlider(0.0, [0.0, 1.0], 0.01, self, self.top_frame2)
 
         # Third row of widgets
         offset_lbl = tk.Label(self.top_frame3, text="Offset on the initial pose (m and °):")
@@ -177,8 +181,10 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.canvas.create_line(right_points, smooth=True, fill='green', width=1.5)
 
         # Update and draw cones
+        cones_spacing_randomisation = self.random_spacing_slider.get_value()
         cones = self.compute_cones(
-            self.cones_spacing, self.orange_spacing, self.close_loop
+            self.cones_spacing, cones_spacing_randomisation,
+            self.orange_spacing, self.close_loop
         )
         radius = m_to_pxl(CONE_RADIUS)
 
