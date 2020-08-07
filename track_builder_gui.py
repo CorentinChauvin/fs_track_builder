@@ -29,6 +29,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         TrackBuilder.__init__(self)
         TrackExporter.__init__(self)
 
+        self.winfo_toplevel().title("Track builder")
+
         # Initialise diverse variables
         self.action_state = ADD_STATE
         self.waypoints = []
@@ -122,9 +124,21 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.slider_y = OffsetSlider('y', [-1.5, 1.5], self)
         self.slider_yaw = OffsetSlider('yaw', [-90, 90], self)
 
-        # Canvas
-        self.canvas = tk.Canvas(self)
-        self.canvas.config(width=CANVAS_WIDTH, height=CANVAS_HEIGHT, background="white")
+        # Canvas (and its scrollbars)
+        self.canvas = tk.Canvas(self, background="white")
+        self.canvas.config(width=CANVAS_WIDTH, height=CANVAS_HEIGHT)
+        sc_w = SCROLLABLE_CANVAS_WIDTH / 2.0
+        sc_h = SCROLLABLE_CANVAS_HEIGHT / 2.0
+        self.canvas.config(scrollregion=(-sc_w, -sc_h, sc_w, sc_h))
+
+        self.x_scrollbar = tk.Scrollbar(self, orient=tk.HORIZONTAL)
+        self.x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.x_scrollbar.config(command=self.canvas.xview)
+        self.y_scrollbar = tk.Scrollbar(self, orient=tk.VERTICAL)
+        self.y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.y_scrollbar.config(command=self.canvas.yview)
+
+        self.canvas.config(xscrollcommand=self.x_scrollbar.set, yscrollcommand=self.y_scrollbar.set)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # Declare window events
@@ -132,6 +146,10 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.canvas.bind("<Button-1>", self._left_click_cb)
         self.canvas.bind("<ButtonRelease-1>", self._left_release_cb)
         self.canvas.bind("<Control-Button-1>", self._ctrl_left_click_cb)
+        self.canvas.bind("<Button-4>", self._mouse_scroll_up_cb)
+        self.canvas.bind("<Button-5>", self._mouse_scroll_down_cb)
+        self.canvas.bind("<Shift-Button-4>", self._mouse_scroll_left_cb)
+        self.canvas.bind("<Shift-Button-5>", self._mouse_scroll_right_cb)
         self.canvas.focus_set()  # give focus to the canvas so that it captures key events
 
     def update_window(self):
@@ -185,14 +203,19 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         """
         self.canvas.focus_set()  # give focus to the canvas so that it captures key events
 
+        offset_x = (self.x_scrollbar.get()[0] - 0.5) * SCROLLABLE_CANVAS_WIDTH
+        offset_y = (self.y_scrollbar.get()[0] - 0.5) * SCROLLABLE_CANVAS_HEIGHT
+        pxl_x = event.x + offset_x  # cursor position (in pxl)
+        pxl_y = event.y + offset_y
+
         redraw = False  # whether the window needs to be drawn again
 
         if not self.is_dragging:
             for wp in self.waypoints:
-                redraw = wp.update_hovering(event.x, event.y) or redraw
+                redraw = wp.update_hovering(pxl_x, pxl_y) or redraw
         else:
-            x = pxl_to_m(event.x)
-            y = pxl_to_m(event.y)
+            x = pxl_to_m(pxl_x)
+            y = pxl_to_m(pxl_y)
 
             if self.snap_grid or (event.state == 276):
                 x, y = self.snap_coord_to_grid(x, y, self.grid_size)
@@ -215,26 +238,32 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
             Adds, deletes or moves waypoints, depending on the action state
         """
+        offset_x = (self.x_scrollbar.get()[0] - 0.5) * SCROLLABLE_CANVAS_WIDTH
+        offset_y = (self.y_scrollbar.get()[0] - 0.5) * SCROLLABLE_CANVAS_HEIGHT
+        pxl_x = event.x + offset_x  # cursor position (in pxl)
+        pxl_y = event.y + offset_y
 
         if self.action_state == ADD_STATE:
-            # Snaps to grid if necessary
-            x = pxl_to_m(event.x)
-            y = pxl_to_m(event.y)
+            x = pxl_to_m(pxl_x)  # cursor position (in m)
+            y = pxl_to_m(pxl_y)
 
+            # Check whether it collides with an already existing waypoint
+            for i, wp in enumerate(self.waypoints):
+                if wp.is_colliding(pxl_x, pxl_y):
+                    self.is_dragging = True
+                    self.dragged_wp_idx = i
+                    return
+
+            # Snaps to grid if necessary, and check that the snapped position is
+            # not already taken
             if self.snap_grid:
                 x, y = self.snap_coord_to_grid(x, y, self.grid_size)
                 pxl_x = m_to_pxl(x)
                 pxl_y = m_to_pxl(y)
-            else:
-                pxl_x = event.x
-                pxl_y = event.y
 
-            # Check whether it collides with an already existing waypoint
-            for i, wp in enumerate(self.waypoints):
-                if wp.is_colliding(event.x, event.y):
-                    self.is_dragging = True
-                    self.dragged_wp_idx = i
-                    return
+                for i, wp in enumerate(self.waypoints):
+                    if wp.is_colliding(pxl_x, pxl_y):
+                        return
 
             # If not, add a new waypoint
             self.waypoints.append(Waypoint(x, y, WAYPOINTS_RADIUS))
@@ -242,7 +271,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
         elif self.action_state == DELETE_STATE:
             for i, wp in enumerate(self.waypoints):
-                if wp.is_colliding(event.x, event.y):
+                if wp.is_colliding(pxl_x, pxl_y):
                     del self.waypoints[i]
                     break
 
@@ -253,6 +282,18 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
     def _ctrl_left_click_cb(self, event):
         self._left_click_cb(event)
+
+    def _mouse_scroll_up_cb(self, event):
+        self.canvas.yview_scroll(-1, "units")
+
+    def _mouse_scroll_down_cb(self, event):
+        self.canvas.yview_scroll(1, "units")
+
+    def _mouse_scroll_left_cb(self, event):
+        self.canvas.xview_scroll(-1, "units")
+
+    def _mouse_scroll_right_cb(self, event):
+        self.canvas.xview_scroll(1, "units")
 
     def _add_button_cb(self):
         self.action_state = ADD_STATE
