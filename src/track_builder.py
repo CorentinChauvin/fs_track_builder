@@ -27,10 +27,12 @@ class TrackBuilder(object):
 
             @param waypoints:  List of waypoints
             @param close_loop: Whether to close the loop
-            @return: List of pixel coordinates ready to draw the center line
+            @return: [points, curvatures]
+                - points -> list of pixel coordinates ready to draw the center line
                 [x1, y1, x2, y2, ...]
+                - curvatures -> curvatures at each point
         """
-        pt_x, pt_y, n_x, n_y = self._get_spline_points(waypoints, close_loop)
+        pt_x, pt_y, n_x, n_y, curvatures = self._get_spline_points(waypoints, close_loop)
         self.center_pts_x = pt_x
         self.center_pts_y = pt_y
         self.center_n_x = n_x
@@ -42,7 +44,7 @@ class TrackBuilder(object):
             points_list.append(m_to_pxl(pt_x[k]))
             points_list.append(m_to_pxl(pt_y[k]))
 
-        return points_list
+        return points_list, curvatures
 
     def compute_side_points(self, track_width):
         """ Interpolates points on the two sides of the track
@@ -82,9 +84,9 @@ class TrackBuilder(object):
             @return: Dictionnary of cones position (in m), ordered by colors
                 ('blue', 'yellow', 'orange')
         """
-        left_cones_x, left_cones_y, left_n_x, left_n_y = \
+        left_cones_x, left_cones_y, left_n_x, left_n_y, _ = \
             self._get_spline_points(self.left_points, False, spacing, std_spacing)
-        right_cones_x, right_cones_y, right_n_x, right_n_y = \
+        right_cones_x, right_cones_y, right_n_x, right_n_y, _ = \
             self._get_spline_points(self.right_points, False, spacing, std_spacing)
 
         # Add blue and yellow cones
@@ -147,12 +149,13 @@ class TrackBuilder(object):
             @param std_spacing: Standard deviation of the distance
                                 between interpolated points (0.0 for
                                 no randomisation)
-            @return: [pt_x, pt_y, n_x, n_y]
+            @return: [pt_x, pt_y, n_x, n_y, curvatures]
                 - pt_x, pt_y -> interpolated spatial coordinates
                 - d_x, d_y -> normals to the interpolated points (of unit length)
+                - curvatures -> curvature at each point
         """
         if len(points) < 2:
-            return [], [], [], []
+            return [], [], [], [], []
 
         # Parse the input points
         wp_x = []
@@ -188,7 +191,7 @@ class TrackBuilder(object):
             n = int(length / spacing)
 
             if n == 0:
-                return [], [], [], []
+                return [], [], [], [], []
 
         # Interpolate the spline
         interval = np.linspace(0, 1, n)
@@ -211,7 +214,19 @@ class TrackBuilder(object):
             n_x.append(d_y[k] / norm)
             n_y.append(-d_x[k] / norm)
 
-        return list(pt_x), list(pt_y), n_x, n_y
+        # Compute the curvatures
+        curvatures = []
+
+        if (len(wp_x) >= 3):
+            ddx, ddy = splev(interval, spline, der=2)
+        else:
+            ddx, ddy = [0 for _ in interval], [0 for _ in interval]
+
+        for i in range(len(pt_x)):
+            curvatures.append((ddy[i] * d_x[i] - ddx[i] * d_y[i]) /
+                              (d_x[i] ** 2 + d_y[i] ** 2)**(3./2.))
+
+        return list(pt_x), list(pt_y), n_x, n_y, curvatures
 
     def snap_coord_to_grid(self, x, y, grid_size):
         """ Snaps spatial coordinates to a grid

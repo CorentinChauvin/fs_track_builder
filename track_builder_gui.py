@@ -46,6 +46,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.initial_pose_offset['x'] = INIT_OFFSET_X
         self.initial_pose_offset['y'] = INIT_OFFSET_Y
         self.initial_pose_offset['yaw'] = radians(INIT_OFFSET_YAW)
+        self.turning_radius = DEFAULT_TURNING_RADIUS  # Maximum turning radius (in m)
 
         # Initialise window
         self.pack(fill=tk.BOTH, expand=True)
@@ -109,8 +110,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.spacing_var.set(str(DEFAULT_SPACING_CONES))
         self.spacing_var.trace(
             "w", lambda name, index, mode,
-            sv=self.spacing_var:
-                self._cones_spacing_cb(self.spacing_var)
+            sv=self.spacing_var: self._cones_spacing_cb(self.spacing_var)
         )
         spacing_lbl = tk.Label(self.top_frame2, text="Cones spacing (m):")
         spacing_lbl.pack(side=tk.LEFT)
@@ -122,6 +122,21 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         self.random_spacing_slider = BasicSlider(0.0, [0.0, 1.0], 0.01, self, self.top_frame2)
 
         # Third row of widgets
+        self.turning_radius_var = tk.StringVar()
+        self.turning_radius_var.set(str(DEFAULT_TURNING_RADIUS))
+        self.turning_radius_var.trace(
+            "w", lambda name, index, mode,
+            sv=self.turning_radius_var: self._turning_radius_var(self.turning_radius_var)
+        )
+
+        radius_lbl = tk.Label(self.top_frame3, text="Max turning radius (m):")
+        radius_lbl.pack(side=tk.LEFT)
+        radius_field = tk.Entry(self.top_frame3, width=4, textvariable=self.turning_radius_var)
+        radius_field.pack(side=tk.LEFT)
+
+        separator = ttk.Separator(self.top_frame3, orient=tk.VERTICAL)
+        separator.pack(side=tk.LEFT, fill="y", padx=5)
+
         offset_lbl = tk.Label(self.top_frame3, text="Offset on the initial pose (m and °):")
         offset_lbl.pack(side=tk.LEFT)
         self.slider_x = OffsetSlider('x', [-3.0, 3.0], self)
@@ -166,11 +181,11 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             self.canvas.create_oval(wp.get_bounding_box(), fill='red')
 
         # Update and draw the center line
-        center_points = self.compute_center_points(self.waypoints, self.close_loop)
+        center_points, curvatures = self.compute_center_points(self.waypoints, self.close_loop)
         if center_points == []:
             self.cones = {}
             return
-        self.canvas.create_line(center_points, smooth=True, fill='blue', width=1, dash=(5, 10))
+        self._draw_center_line(center_points, curvatures)
 
         # Update and draw sides
         left_points, right_points = self.compute_side_points(TRACK_WIDTH)
@@ -201,6 +216,23 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         x2 = x1 + 20*cos(self.initial_pose[2])
         y2 = y1 + 20*sin(self.initial_pose[2])
         self.canvas.create_line(x1, y1, x2, y2, arrow=tk.LAST, arrowshape="8 10 5", width=5, fill="red")
+
+    def _draw_center_line(self, center_points, curvatures):
+        """ Draw the center line
+
+            @param center_points: List of pixel coordinates ready to draw the center line
+                                  [x1, y1, x2, y2, ...]
+            @param curvatures:    Curvatures at each point
+        """
+        for k in range(len(curvatures)-1):
+            points = center_points[2*k:2*(k+2)]
+            max_curvature = 1.0 / self.turning_radius
+
+            if abs(curvatures[k]) > max_curvature:
+                self.canvas.create_line(points, smooth=True, fill='red', width=2)
+            else:
+                self.canvas.create_line(points, smooth=True, fill='blue', width=1, dash=(5, 10))
+
 
     def _mouse_motion_cb(self, event):
         """ Callback for any motion of the mouse
@@ -343,6 +375,17 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
     def _orange_spacing_cb(self, string_var):
         try:
             self.orange_spacing = float(string_var.get())
+            self.update_window()
+        except ValueError:  # catch wrong inputs
+            pass
+
+    def _turning_radius_var(self, string_var):
+        try:
+            self.turning_radius = float(string_var.get())
+
+            if self.turning_radius == 0.0:
+                self.turning_radius = 1.0
+
             self.update_window()
         except ValueError:  # catch wrong inputs
             pass
