@@ -12,7 +12,7 @@ from math import cos, sin, radians
 import tkinter as tk
 from tkinter import ttk
 from src.config import *
-from src.utils import pxl_to_m, m_to_pxl, Point
+from src.utils import DistanceConverter, Point
 from src.waypoint import Waypoint
 from src.track_builder import TrackBuilder
 from src.track_exporter import TrackExporter
@@ -21,13 +21,14 @@ from src.sliders import OffsetSlider, BasicSlider
 ##########################################
 ## Class TrackBuilderGUI
 #
-class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
+class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter, DistanceConverter):
     """
     """
     def __init__(self, parent=None):
         tk.Frame.__init__(self, parent)
         TrackBuilder.__init__(self)
         TrackExporter.__init__(self)
+        DistanceConverter.__init__(self)
 
         self.winfo_toplevel().title("Track builder")
 
@@ -72,6 +73,15 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
         clear_button = tk.Button(self.top_frame1, text="Clear", command=self._clear_button_cb)
         clear_button.pack(side=tk.LEFT)
+
+        separator = ttk.Separator(self.top_frame1, orient=tk.VERTICAL)
+        separator.pack(side=tk.LEFT, fill="y", padx=5)
+
+        zoom_out_button = tk.Button(self.top_frame1, text="Zoom out", command=self._zoom_out_button_cb)
+        zoom_out_button.pack(side=tk.LEFT)
+
+        zoom_in_button = tk.Button(self.top_frame1, text="Zoom in", command=self._zoom_in_button_cb)
+        zoom_in_button.pack(side=tk.LEFT)
 
         # First row of widgets (right)
         export_button = tk.Button(self.top_frame1, text="Export", command=self._export_button_cb)
@@ -201,18 +211,18 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             self.cones_spacing, cones_spacing_randomisation,
             self.orange_spacing, self.close_loop
         )
-        radius = m_to_pxl(CONE_RADIUS)
+        radius = self.m_to_pxl(CONE_RADIUS)
 
         for color in self.cones:
             for cone in cones[color]:
-                x = m_to_pxl(cone.x)
-                y = m_to_pxl(cone.y)
+                x = self.m_to_pxl(cone.x)
+                y = self.m_to_pxl(cone.y)
                 self.canvas.create_oval([x-radius, y-radius, x+radius, y+radius], fill=color)
 
         # Update and draw starting position
         self.initial_pose = self.compute_start_pose(self.waypoints, self.initial_pose_offset)
-        x1 = m_to_pxl(self.initial_pose[0])
-        y1 = m_to_pxl(self.initial_pose[1])
+        x1 = self.m_to_pxl(self.initial_pose[0])
+        y1 = self.m_to_pxl(self.initial_pose[1])
         x2 = x1 + 20*cos(self.initial_pose[2])
         y2 = y1 + 20*sin(self.initial_pose[2])
         self.canvas.create_line(x1, y1, x2, y2, arrow=tk.LAST, arrowshape="8 10 5", width=5, fill="red")
@@ -252,8 +262,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             for wp in self.waypoints:
                 redraw = wp.update_hovering(pxl_x, pxl_y) or redraw
         else:
-            x = pxl_to_m(pxl_x)
-            y = pxl_to_m(pxl_y)
+            x = self.pxl_to_m(pxl_x)
+            y = self.pxl_to_m(pxl_y)
 
             if self.snap_grid or (event.state == 276):
                 x, y = self.snap_coord_to_grid(x, y, self.grid_size)
@@ -261,7 +271,7 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             # Check whether it would collides with another waypoint
             collision = False
             for i, wp in enumerate(self.waypoints):
-                if i != self.dragged_wp_idx and wp.is_colliding(m_to_pxl(x), m_to_pxl(y)):
+                if i != self.dragged_wp_idx and wp.is_colliding(self.m_to_pxl(x), self.m_to_pxl(y)):
                     collision = True
                     break
             if not collision:
@@ -282,8 +292,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
         pxl_y = event.y + offset_y
 
         if self.action_state == ADD_STATE:
-            x = pxl_to_m(pxl_x)  # cursor position (in m)
-            y = pxl_to_m(pxl_y)
+            x = self.pxl_to_m(pxl_x)  # cursor position (in m)
+            y = self.pxl_to_m(pxl_y)
 
             # Check whether it collides with an already existing waypoint
             for i, wp in enumerate(self.waypoints):
@@ -296,8 +306,8 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
             # not already taken
             if self.snap_grid:
                 x, y = self.snap_coord_to_grid(x, y, self.grid_size)
-                pxl_x = m_to_pxl(x)
-                pxl_y = m_to_pxl(y)
+                pxl_x = self.m_to_pxl(x)
+                pxl_y = self.m_to_pxl(y)
 
                 for i, wp in enumerate(self.waypoints):
                     if wp.is_colliding(pxl_x, pxl_y):
@@ -346,6 +356,18 @@ class TrackBuilderGUI(tk.Frame, TrackBuilder, TrackExporter):
 
     def _clear_button_cb(self):
         self.waypoints = []
+        self.update_window()
+
+    def _zoom_out_button_cb(self):
+        DistanceConverter.zoom_out()
+        for p in self.waypoints:
+            p.update_pxl_position()
+        self.update_window()
+
+    def _zoom_in_button_cb(self):
+        DistanceConverter.zoom_in()
+        for p in self.waypoints:
+            p.update_pxl_position()
         self.update_window()
 
     def _export_button_cb(self):

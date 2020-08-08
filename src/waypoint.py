@@ -2,16 +2,18 @@
     Definition of a class to handle movable waypoints
 """
 
-from src.utils import pxl_to_m, m_to_pxl, Point
+from src.utils import DistanceConverter, Point
 
 
-class Waypoint(Point):
+class Waypoint(Point, DistanceConverter):
     """ Handles movable waypoint GUI behaviour
     """
     def __init__(self, x=0.0, y=0.0, radius=1.0):
         super().__init__(x, y)    # spatial coordinates (in meters)
-        self.pxl_x = m_to_pxl(x)  # canvas coordinates (in pixels)
-        self.pxl_y = m_to_pxl(y)
+        DistanceConverter.__init__(self)
+
+        self.pxl_x = self.m_to_pxl(x)  # canvas coordinates (in pixels)
+        self.pxl_y = self.m_to_pxl(y)
         self.is_hovered = False  # whether the mouse is over the waypoint
 
         self.base_radius = radius
@@ -59,8 +61,13 @@ class Waypoint(Point):
         """
         self.x = x
         self.y = y
-        self.pxl_x = m_to_pxl(x)
-        self.pxl_y = m_to_pxl(y)
+        self.update_pxl_position()
+
+    def update_pxl_position(self):
+        """ Computes the pixel position of the waypoint and its bounding box
+        """
+        self.pxl_x = self.m_to_pxl(self.x)
+        self.pxl_y = self.m_to_pxl(self.y)
         self._update_bounding_box()
 
     def _update_bounding_box(self):

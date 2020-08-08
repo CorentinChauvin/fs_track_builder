@@ -5,14 +5,16 @@
 from math import sqrt, atan2
 import numpy as np
 from scipy.interpolate import splprep, splev
-from src.utils import m_to_pxl, Point
+from src.utils import DistanceConverter, Point
 
 
-class TrackBuilder(object):
+class TrackBuilder(DistanceConverter):
     """ Base class for the TrackBuilderGUI, handles all computations
     """
 
     def __init__(self):
+        DistanceConverter.__init__(self)
+
         self.center_pts_x = []  # coordinates of the center points of the track
         self.center_pts_y = []
         self.center_n_x = []    # coordinates of the normals to the center points
@@ -41,8 +43,8 @@ class TrackBuilder(object):
         points_list = []
 
         for k in range(len(pt_x)):
-            points_list.append(m_to_pxl(pt_x[k]))
-            points_list.append(m_to_pxl(pt_y[k]))
+            points_list.append(self.m_to_pxl(pt_x[k]))
+            points_list.append(self.m_to_pxl(pt_y[k]))
 
         return points_list, curvatures
 
@@ -61,14 +63,14 @@ class TrackBuilder(object):
         for k in range(len(self.center_pts_x)):
             x = self.center_pts_x[k] + 0.5 * track_width * self.center_n_x[k]
             y = self.center_pts_y[k] + 0.5 * track_width * self.center_n_y[k]
-            left_points_list.append(m_to_pxl(x))
-            left_points_list.append(m_to_pxl(y))
+            left_points_list.append(self.m_to_pxl(x))
+            left_points_list.append(self.m_to_pxl(y))
             self.left_points.append(Point(x, y))
 
             x = self.center_pts_x[k] - 0.5 * track_width * self.center_n_x[k]
             y = self.center_pts_y[k] - 0.5 * track_width * self.center_n_y[k]
-            right_points_list.append(m_to_pxl(x))
-            right_points_list.append(m_to_pxl(y))
+            right_points_list.append(self.m_to_pxl(x))
+            right_points_list.append(self.m_to_pxl(y))
             self.right_points.append(Point(x, y))
 
         return left_points_list, right_points_list
